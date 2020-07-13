@@ -12,7 +12,9 @@ library(dplyr)
 library(tidyr)
 library(reshape2)
 
-LandDemand <- read_csv("~/Desktop/LandDemand/FOFA2050CountryData_Crop-production 7.csv") #Import FOFA 2050 data
+LandDemand <-  read_csv("/Desktop/LandDemand/FOFA2050CountryData_Crop-production 7.csv") #Import FOFA 2050 data
+# LandDemand <-  read_csv("../FOFA2050CountryData_Crop-production 7.csv") #Import FOFA 2050 data    #on dan's machine
+ 
 LandDemand$Domain <- NULL #in future you can use dplyr::select(-c(Domain, CountryCode, Scenario)) etc. to remove columns you dont want or need or select the columns you want
 LandDemand$CountryCode <- NULL
 LandDemand <- dplyr::filter(LandDemand, Scenario == "Business As Usual") 
@@ -22,8 +24,8 @@ LandDemand$Units <- NULL
 LandDemand <- spread(LandDemand, Indicator, Value) #create dataframe with columns for arable land, crop yield, cropping intensity and harvested area for each crop-irrigated/rainfed-country-year permutation
 LandDemand$`Climate shifter` <- NULL
 LandDemand$`Technology shifter` <- NULL 
-LandDemand$`Harvested area` <- LandDemand$`Harvested area` * 1000   #convert from ?? to ??  #saloni
-LandDemand$Production <- LandDemand$`Harvested area` * LandDemand$`Crop yield` #calculate production in ?? units #saloni
+LandDemand$`Harvested area` <- LandDemand$`Harvested area` * 1000   #convert from 1000 ha to ha
+LandDemand$Production <- LandDemand$`Harvested area` * LandDemand$`Crop yield` #calculate production in tons
 LandDemand <- spread(LandDemand, Element, Production) #create separate columns for irrigated and rainfed production. Code creates separate rows for irrigated and rainfed though since other values besides production (e.g. harvested area) are different for irrigated and rainfed. 
 colnames(LandDemand) <- c("Item", "CountryName", "Year","Arable land" ,"Crop yield","Cropping intensity", "Harvested Area", "Prod_I", "Prod_R") #could use dplyr::Rename to just rename specific columns in future
 
@@ -129,7 +131,7 @@ LUC_baseline$LUC <- ifelse(LUC_baseline$Base_R == 0,(LUC_baseline$Base_I/LUC_bas
  
 ```
 
-```{r pressure, echo=FALSE}
+```{r Projected LUC, echo=FALSE}
 # Calculate LUC by crop and country for projected = land demand/crop intensity(I,R) - 2012 arable land(I,R) ; assume 2050 cropping intensity; projected land demand = harvested area for 2050
 
 colnames(LandDemand_2050) <- c("Item", "CountryName","Arable land", "Crop yield",  "Cropping intensity", "Prod_I",  "Prod_R", "Harv_I", "Harv_R") 
@@ -144,7 +146,7 @@ LandDemand_2050 <- LandDemand_2050  %>% #aggregate any duplicate rainfed or irri
   summarise_each(funs(sum))
 
 #Calc LUC for projected scenario.Projected land demand = harvested area for 2050, need 2012 arable land, 2050 cropping intensity.
-LUC_projected  <- merge(LandDemand_2050[, c(1,2, 5:10)],LandDemand_2012[,c(1,2,11,12)]) #Combine "Item", "Countryname", 2050 production (rainfed and irrigated), 2050 crop intensity (irrigatd and rainfed), 2012 Arable land (irrigated and rainfed)
+LUC_projected  <- merge(LandDemand_2050[, c(1,2, 5:10)],LandDemand_2012[,c(1,2,11,12)]) #Combine "Item", "Countryname", 2050 production (rainfed and irrigated),#2050 harvested area, 2050 crop intensity (irrigatd and rainfed), 2012 Arable land (irrigated and rainfed)
 colnames(LUC_projected) <- c("Item", "CountryName", "Prod_I", "Prod_R", "Harv_I", "Harv_R", "CropIntensity_I","CropIntensity_R", "Arable12_I", "Arable12_R" )
 #Convert land demand to arable land with cropping intensity and calculate LUC
 LUC_projected$LUC <- ifelse(LUC_projected$Harv_R == 0,(LUC_projected$Harv_I/LUC_projected$CropIntensity_I) - LUC_projected$Arable12_I ,ifelse(LUC_projected$Harv_I == 0, (LUC_projected$Harv_R/LUC_projected$CropIntensity_R) -  LUC_projected$Arable12_R, ((LUC_projected$Harv_R/LUC_projected$CropIntensity_R) + (LUC_projected$Harv_I/LUC_projected$CropIntensity_I)) - (LUC_projected$Arable12_I + LUC_projected$Arable12_R)))
@@ -152,16 +154,16 @@ LUC_projected$LUC <- ifelse(LUC_projected$Harv_R == 0,(LUC_projected$Harv_I/LUC_
 ```
 
 
-```{r pressure, echo=FALSE}
-# Calculate LUC by crop and country for high  =  land demand/crop intensity(I,R) - 2012 arable land(I,R) ; assume 2050 cropping intensity; high land demand = harvested area for 2012. Need to calculate new cropping intensity. Yields are higher than FOFA 2050 yield so cropping intensity must be higher. 
+```{r high LUC, echo=FALSE}
+# Calculate LUC by crop and country for high  =  2012 harvested land (I,R)/crop intensity(I,R) - 2012 arable land(I,R) ; assume 2050 cropping intensity; high land demand = harvested area for 2012. Need to calculate new cropping intensity. Yields are higher than FOFA 2050 yield so cropping intensity must be higher. 
 
 High_Yld_CI <- cbind(LandDemand_2050[, c(1,2,5:10)], LandDemand_2012[,c(1,2,7,8)])
 High_Yld_CI$Item1 <- NULL
 High_Yld_CI$CountryName1 <- NULL 
 colnames(High_Yld_CI) <- c("Item", "CountryName" , "Prod_I" ,"Prod_R" , "Harv_I", "Harv_R",        "CropIntensity_I", "CropIntensity_R", "Harv12_I" , "Harv12_R")
 
-#Calc new yield for High-yield scenario
-High_Yld_CI$Yld_I <- High_Yld_CI$Prod_I/High_Yld_CI$Harv12_I
+#Calc new yield for High-yield scenario - divide 2050 production by 2012 harvested area
+High_Yld_CI$Yld_I <- High_Yld_CI$Prod_I/High_Yld_CI$Harv12_I   
 High_Yld_CI$Yld_R <- High_Yld_CI$Prod_R/High_Yld_CI$Harv12_R
 
 #Calc 2050 FOFA yield
@@ -171,7 +173,7 @@ High_Yld_CI$FOFAyld_R <- High_Yld_CI$Prod_R/High_Yld_CI$Harv_R
 #replace Nan with 0
 High_Yld_CI[is.na(High_Yld_CI)] <- 0
 
-#Calc new crop intensity for high-yld scenario. New crop intensity = (high yield * FOFA crop intensity)/FOFA yield
+#Calc new crop intensity for high-yld scenario. New crop intensity = FOFA crop intensity * (high yield/FOFA yield)
 High_Yld_CI$new_CI_R <- (High_Yld_CI$Yld_R * High_Yld_CI$CropIntensity_R)/High_Yld_CI$FOFAyld_R 
 High_Yld_CI$new_CI_I <- (High_Yld_CI$Yld_I * High_Yld_CI$CropIntensity_I)/High_Yld_CI$FOFAyld_I 
 
@@ -187,10 +189,62 @@ High_Yld_CI[is.na(High_Yld_CI)] <- 0
 LUC_high[is.na(LUC_high)] <- 0
 
 #Convert land demand to arable land with cropping intensity,cannot use original arable land from FOFA data 
-LUC_high$LUC <- ifelse(LUC_high$Harv_R == 0,(LUC_high$Harv_I/LUC_high$new_CI_I) - LUC_high$Arable_I ,ifelse(LUC_high$Harv_I == 0, (LUC_high$Harv_R/LUC_high$new_CI_R) -  LUC_high$Arable_R, ((LUC_high$Harv_R/LUC_high$new_CI_R) + (LUC_high$Harv_I/LUC_high$new_CI_I)) - (LUC_high$Arable_I + LUC_high$Arable_R)))
+LUC_high$LUC <- ifelse(LUC_high$Harv_R == 0,(LUC_high$Harv_I/LUC_high$new_CI_I) - LUC_high$Arable_I ,
+                       ifelse(LUC_high$Harv_I == 0, (LUC_high$Harv_R/LUC_high$new_CI_R) -  LUC_high$Arable_R, 
+                              ((LUC_high$Harv_R/LUC_high$new_CI_R) + (LUC_high$Harv_I/LUC_high$new_CI_I)) - (LUC_high$Arable_I + LUC_high$Arable_R)))
 ```
 
-```{r pressure, echo=FALSE}
+```{r High LUC alternative, echo=F}
+#In the high scenario, we assume yields increase enough to keep LUC to 0. Therefore, in this scenario 2050 arable area = 2012 arable area. For simplicity we assume CI rises as projected by FOFA and only change yields in our scenario.
+
+#This code calculates High scneario crop yields  = 2050 FOFA-projected production (in tons) / (2012 arable land area (ha) * 2050 FOFA-projected cropping intensity (harvest/ha))
+
+#LUC is calculated as arable land for the scenario - 2012 arable land, but by design is 0 since arable land for the scanrio is asssumed to be 2012 arable land.
+
+#organize data
+fofa <-  read_csv("~/Desktop/LandDemand/FOFA2050CountryData_Crop-production 7.csv") %>%  #Import FOFA 2050 data
+  filter(Scenario == "Business As Usual") %>% #filter to scenario projection from FOFA we're using
+  select(Indicator, Crop = Item, Element, Country = CountryName, Year, Value) %>%  #select columns of itnerest
+  spread(Indicator, value = Value) %>%  #spread variables to separate columns
+  select(-`Climate shifter`, -`Technology shifter`) %>% #remove unused cols
+  rename(Harvested = `Harvested area`,  #give columns easier to reference names
+         Arable = `Arable land`,
+         Yield = `Crop yield`,
+         CI = `Cropping intensity`) %>% 
+  mutate(Harvested = 1000 * Harvested) %>%  #convert from 1000 ha to ha
+  mutate(Prod = Harvested * Yield) #calculate production in tons
+  
+#2050 FOFA-projections
+fofa_2050 <- fofa %>% filter(Year == 2050) %>% select(-Year)
+
+#2012 FOFA-projections / data
+fofa_2012 <- fofa %>% filter(Year == 2012)%>% select(-Year)
+
+#join dataframes into 1 for calculations, selecting only columns from each datafame needed for calcs
+fofa_2012_2050 <- left_join(select(fofa_2050, -c(Arable, Yield, Harvested)),  #select production & intensity
+                            select(fofa_2012, Crop, Element, Country, Arable), #select just arable land
+                            by = c("Crop", "Element", "Country"))
+
+# calculate high scenario yields - uses formula from above: 2050 Production / (2012 Arable Area * 2050 Crop Intensity)
+fofa_2012_2050 <- mutate(fofa_2012_2050, 
+                         Yield = (Prod / (Arable* CI)),  #units: tons/ha of harvested land
+                         Harvested = (Arable * CI)) #add harvested too. units; ha
+
+#add high scenario land use change (zero by design)
+fofa_2012_2050 <- mutate(fofa_2012_2050,LUC = (Arable - Arable))  #units: ha of arable land
+
+#give dataframe same structure, column names, and column order as earier dataframes, avoiding having to change columns in rest of code
+LUC_high_alt <- fofa_2012_2050 %>% 
+  pivot_wider(names_from = Element, values_from = c(CI, Yield, Prod, Arable, Harvested, LUC)) %>% #spread columns so there's separate ones for Irrigated & Rainfed
+  mutate(LUC = LUC_Irrigated - LUC_Rainfed) %>% #calculate total LUC
+  select(-c(LUC_Irrigated, LUC_Rainfed)) %>% #remove seperate cols for rainfed and irrigated LUC
+  select(Item = Crop, CountryName = Country, Harv_I = Harvested_Irrigated, Harv_R = Harvested_Rainfed, new_CI_R = CI_Rainfed, new_CI_I = CI_Irrigated,
+         Arable_I = Arable_Irrigated, Arable_R = Arable_Rainfed, LUC = LUC, 
+         Yield_I = Yield_Irrigated, Yield_R = Yield_Rainfed, Prod_I = Prod_Irrigated, Prod_R = Prod_Rainfed) #added additional cols
+```
+
+
+```{r Save files, echo=FALSE}
 #Save files
 
 write.csv(LUC_high,"~/Desktop/LandDemand/LUC_high.csv")
