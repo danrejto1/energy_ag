@@ -12,22 +12,20 @@ library(dplyr)
 library(tidyr)
 library(reshape2)
 
-read_csv("~/Desktop/LandDemand/FOFA2050CountryData_Crop-production 7.csv") #Import FOFA 2050 data
-
-LandDemand <- FOFA2050CountryData_Crop_production_7
-LandDemand$Domain <- NULL
+LandDemand <- read_csv("~/Desktop/LandDemand/FOFA2050CountryData_Crop-production 7.csv") #Import FOFA 2050 data
+LandDemand$Domain <- NULL #in future you can use dplyr::select(-c(Domain, CountryCode, Scenario)) etc. to remove columns you dont want or need or select the columns you want
 LandDemand$CountryCode <- NULL
 LandDemand <- dplyr::filter(LandDemand, Scenario == "Business As Usual") 
 LandDemand$Scenario <- NULL
 LandDemand$Region <- NULL
 LandDemand$Units <- NULL
-LandDemand <- spread(LandDemand, Indicator, Value)
+LandDemand <- spread(LandDemand, Indicator, Value) #create dataframe with columns for arable land, crop yield, cropping intensity and harvested area for each crop-irrigated/rainfed-country-year permutation
 LandDemand$`Climate shifter` <- NULL
 LandDemand$`Technology shifter` <- NULL 
-LandDemand$`Harvested area` <- LandDemand$`Harvested area` * 1000
-LandDemand$Production <- LandDemand$`Harvested area` * LandDemand$`Crop yield`
-LandDemand <- spread(LandDemand, Element, Production)
-colnames(LandDemand) <- c("Item", "CountryName", "Year","Arable land" ,"Crop yield","Cropping intensity", "Harvested Area", "Prod_I", "Prod_R")
+LandDemand$`Harvested area` <- LandDemand$`Harvested area` * 1000   #convert from ?? to ??  #saloni
+LandDemand$Production <- LandDemand$`Harvested area` * LandDemand$`Crop yield` #calculate production in ?? units #saloni
+LandDemand <- spread(LandDemand, Element, Production) #create separate columns for irrigated and rainfed production. Code creates separate rows for irrigated and rainfed though since other values besides production (e.g. harvested area) are different for irrigated and rainfed. 
+colnames(LandDemand) <- c("Item", "CountryName", "Year","Arable land" ,"Crop yield","Cropping intensity", "Harvested Area", "Prod_I", "Prod_R") #could use dplyr::Rename to just rename specific columns in future
 
 
 ```
@@ -38,13 +36,13 @@ colnames(LandDemand) <- c("Item", "CountryName", "Year","Arable land" ,"Crop yie
 # Calculate Projected Land Demand (= 2050 prod/2050 yield = 2050 harvested area)
 LandDemand_2050 <- dplyr::filter(LandDemand, Year == 2050)
 LandDemand_2050$Year <- NULL
-LandDemand_2050$Element <- ifelse(is.na(LandDemand_2050$Prod_R) == TRUE, "Irrigated", "Rainfed")
+LandDemand_2050$Element <- ifelse(is.na(LandDemand_2050$Prod_R) == TRUE, "Irrigated", "Rainfed") 
 LandDemand_2050 <- spread(LandDemand_2050, Element, `Harvested Area`)
 LandDemand_2050[is.na(LandDemand_2050)] <- 0
 
-LandDemand_Projected <- LandDemand_2050[,c(1,2,8,9)]
+LandDemand_Projected <- LandDemand_2050[,c(1,2,8,9)] #create new df with just harvested area for irrigated and rainfed
 LandDemand_Projected$proj <- 0
-LandDemand_Projected <- LandDemand_Projected %>% #aggregate any duplicate rainfed or irrigated values so each crop-country value is not duplicated. 
+LandDemand_Projected <- LandDemand_Projected %>% #sum irrigated & rainfed harvested area for each country and crop 
   group_by(Item, CountryName) %>%
   summarise_each(funs(sum))
 #LandDemand Projected = Harvested Area (2050,Irrigated) + Harvested Area (2050, Rainfed)
@@ -53,9 +51,11 @@ LandDemand_Projected$proj <- LandDemand_Projected$Irrigated + LandDemand_Project
 
 ```{r pressure, echo=FALSE}
 # Calculate Baseline land demand (= 2050 prod/2012 yield)
+
+#create df with irrigated and rainfed YIELD for 2012
 LandDemand_2012 <- dplyr::filter(LandDemand, Year == 2012)
 LandDemand_2012$Element <- ifelse(is.na(LandDemand_2012$Prod_R) == TRUE, "Irrigated", "Rainfed")
-LandDemand_2012 <- spread(LandDemand_2012, Element, `Crop yield`)
+LandDemand_2012 <- spread(LandDemand_2012, Element, `Crop yield`) 
 LandDemand_2012[is.na(LandDemand_2012)] <- 0
 LandDemand_2012$Year <- NULL 
 LandDemand_Baseline <- LandDemand_2012[,c(1,2,8,9)]
@@ -66,30 +66,36 @@ LandDemand_Baseline <- merge(LandDemand_Baseline, LandDemand_2050[,c(1,2,6,7)]) 
 LandDemand_Baseline <-LandDemand_Baseline  %>% #aggregate any duplicate rainfed or irrigated values so each crop-country value is not duplicated. 
   group_by(Item, CountryName) %>%
   summarise_each(funs(sum))
-LandDemand_Baseline$Harv_R <-  LandDemand_Baseline$Prod_R/LandDemand_Baseline$Yld_R 
-LandDemand_Baseline$Harv_I <-  LandDemand_Baseline$Prod_I/LandDemand_Baseline$Yld_I 
+LandDemand_Baseline$Harv_R <-  LandDemand_Baseline$Prod_R/LandDemand_Baseline$Yld_R #calculate harvested rainfed area 
+LandDemand_Baseline$Harv_I <-  LandDemand_Baseline$Prod_I/LandDemand_Baseline$Yld_I #calculate harvested irrigated area 
 LandDemand_Baseline[is.na(LandDemand_Baseline)] <- 0
 LandDemand_Baseline$Baseline <- LandDemand_Baseline$Harv_R + LandDemand_Baseline$Harv_I #total baseline land demand  
 ```
 
 ```{r pressure, echo=FALSE}
 # Calculate High Land demand = 2012 harvested area (High Yield = 2050 production/2012 harvested area)
+
+#create df with irrigated and rainfed YIELD and HARVESTED AREA for 2012
 colnames(LandDemand_2012) <- c("Item", "CountryName", "Arable land" , "Cropping intensity" ,"Harvested Area",  "Prod_I","Prod_R", "Yld_I", "Yld_R" )
 LandDemand_2012$Element <- ifelse(LandDemand_2012$Prod_R == 0, "Irrigated", "Rainfed")
 LandDemand_2012 <- spread(LandDemand_2012, Element, `Harvested Area`)
 colnames(LandDemand_2012) <- c("Item", "CountryName",  "Arable land" , "Cropping intensity",  "Prod_I","Prod_R", "Yld_I", "Yld_R", "Harv_I", "Harv_R" )
 LandDemand_2012[is.na(LandDemand_2012)] <- 0
 LandDemand_High <- LandDemand_2012
-LandDemand_High <-LandDemand_High  %>% #aggregate any duplicate rainfed or irrigated values so each crop-country value is not duplicated. 
+
+#aggregate any duplicate rainfed or irrigated values so each crop-country value is not duplicated. 
+LandDemand_High <-LandDemand_High  %>% 
   group_by(Item, CountryName) %>%
   summarise_each(funs(sum))
-LandDemand_High$High <- LandDemand_High$Harv_I + LandDemand_High$Harv_R #total land demand for high scenario
+
+#total land demand for high scenario - equals 2012 harvested area for each crop & country
+LandDemand_High$High <- LandDemand_High$Harv_I + LandDemand_High$Harv_R 
 
 #Ignore Cropping intensity, arable land, yield, and the production values in Land Demand High dataset since those reflect 2012, will calculate High scenario yield later
 
 ```
 
-```{r pressure, echo=FALSE}
+```{r Baseline LUC, echo=FALSE}
 # Calculate LUC by crop and country for baseline scenario (baseline land demand/crop intensity(I,R) - 2012 arable land(I,R)). Dividing land demand by cropping intensity converts land demand (essentially harvested area) to arable land for that scenario. The "I" and "R" labels stand for irrigated land and rainfed land. Both irrigated and rainfed systems have different cropping intensities and therefore different amounts of harvested area and arable land
 
 #need to spread cropping intensity first ; 2012 cropping intensity is assumed for baseline yield scenario
@@ -108,10 +114,18 @@ LandDemand_2012 <-LandDemand_2012  %>% #aggregate any duplicate rainfed or irrig
   summarise_each(funs(sum))
 
 #Merge relevant data and calc LUC for baseline
-LUC_baseline <- merge(LandDemand_Baseline[, c(1,2,7,8),],LandDemand_2012[,c(1,2,9:12)])
+LUC_baseline <- merge(LandDemand_Baseline[, c(1,2,7,8),],LandDemand_2012[,c(1,2,9:12)]) #merge baseline rainfed & irrigated harvested area (7 & 8) w/ 2012 crop intensity & arable land (9:12)
 colnames(LUC_baseline) <- c("Item","CountryName","Base_R", "Base_I", "CropIntensity_I","CropIntensity_R", "Arable_I","Arable_R")
-#Convert land demand to arable land with cropping intensity,cannot use original arable land from FOFA data 
-LUC_baseline$LUC <- ifelse(LUC_baseline$Base_R == 0,(LUC_baseline$Base_I/LUC_baseline$CropIntensity_I) - LUC_baseline$Arable_I ,ifelse(LUC_baseline$Base_I == 0, (LUC_baseline$Base_R/LUC_baseline$CropIntensity_R) -  LUC_baseline$Arable_R, ((LUC_baseline$Base_R/LUC_baseline$CropIntensity_R) + (LUC_baseline$Base_I/LUC_baseline$CropIntensity_I)) - (LUC_baseline$Arable_I + LUC_baseline$Arable_R)))
+
+###Convert land demand to arable land with cropping intensity,cannot use original arable land from FOFA data 
+
+                    #if baseline harvested rainfed is zero, LUC = irrigated arable area (harvested area divided by crop intensity)
+LUC_baseline$LUC <- ifelse(LUC_baseline$Base_R == 0,(LUC_baseline$Base_I/LUC_baseline$CropIntensity_I) - LUC_baseline$Arable_I ,
+                    #otherwise if irrigated area is zero, LUC = rainfed arable area (harvested area divided by crop intensity)
+                    ifelse(LUC_baseline$Base_I == 0, (LUC_baseline$Base_R/LUC_baseline$CropIntensity_R) -  LUC_baseline$Arable_R,
+                    #otherwise (if neither area zero), LUC = rainfed + irrigated arable area
+                    ((LUC_baseline$Base_R/LUC_baseline$CropIntensity_R) + (LUC_baseline$Base_I/LUC_baseline$CropIntensity_I)) - 
+                                    (LUC_baseline$Arable_I + LUC_baseline$Arable_R)))
  
 ```
 
