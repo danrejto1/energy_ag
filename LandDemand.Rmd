@@ -250,7 +250,13 @@ LUC_high_alt <- fofa_2012_2050 %>%
 write.csv(LUC_high,"~/Desktop/LandDemand/LUC_high.csv")
 write.csv(LUC_baseline,"~/Desktop/LandDemand/LUC_baseline.csv")
 write.csv(LUC_projected,"~/Desktop/LandDemand/LUC_projected.csv")
+write.csv(LUC_high_alt,"~/Desktop/LandDemand/LUC_high_alt.csv")
 
+#save to shared drive
+write.csv(LUC_high,"~/Google Drive File Stream/My Drive/BTI Research/Food & Farming/Energy in ag/LandDemand/LUC_high.csv")
+write.csv(LUC_baseline,"~/Google Drive File Stream/My Drive/BTI Research/Food & Farming/Energy in ag/LandDemand/LUC_baseline.csv")
+write.csv(LUC_projected,"~/Google Drive File Stream/My Drive/BTI Research/Food & Farming/Energy in ag/LandDemand/LUC_projected.csv")
+write.csv(LUC_high_alt,"~/Google Drive File Stream/My Drive/BTI Research/Food & Farming/Energy in ag/LandDemand/LUC_high_alt.csv")
 ```
 
 ```{r pressure, echo=FALSE}
