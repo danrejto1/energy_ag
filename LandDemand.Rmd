@@ -1,0 +1,450 @@
+---
+title: "Land Use Projection for African Regions"
+author: "Saloni - Dan QC"
+date: "7/13/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+#Import FOFA future crop production data and streamline dataset
+library(readr) 
+library(dplyr)
+library(tidyr)
+library(reshape2)
+
+read_csv("~/Desktop/LandDemand/FOFA2050CountryData_Crop-production 7.csv") #Import FOFA 2050 data
+
+LandDemand <- FOFA2050CountryData_Crop_production_7
+LandDemand$Domain <- NULL
+LandDemand$CountryCode <- NULL
+LandDemand <- dplyr::filter(LandDemand, Scenario == "Business As Usual") 
+LandDemand$Scenario <- NULL
+LandDemand$Region <- NULL
+LandDemand$Units <- NULL
+LandDemand <- spread(LandDemand, Indicator, Value)
+LandDemand$`Climate shifter` <- NULL
+LandDemand$`Technology shifter` <- NULL 
+LandDemand$`Harvested area` <- LandDemand$`Harvested area` * 1000
+LandDemand$Production <- LandDemand$`Harvested area` * LandDemand$`Crop yield`
+LandDemand <- spread(LandDemand, Element, Production)
+colnames(LandDemand) <- c("Item", "CountryName", "Year","Arable land" ,"Crop yield","Cropping intensity", "Harvested Area", "Prod_I", "Prod_R")
+
+
+```
+
+
+
+```{r pressure, echo=FALSE}
+# Calculate Projected Land Demand (= 2050 prod/2050 yield = 2050 harvested area)
+LandDemand_2050 <- dplyr::filter(LandDemand, Year == 2050)
+LandDemand_2050$Year <- NULL
+LandDemand_2050$Element <- ifelse(is.na(LandDemand_2050$Prod_R) == TRUE, "Irrigated", "Rainfed")
+LandDemand_2050 <- spread(LandDemand_2050, Element, `Harvested Area`)
+LandDemand_2050[is.na(LandDemand_2050)] <- 0
+
+LandDemand_Projected <- LandDemand_2050[,c(1,2,8,9)]
+LandDemand_Projected$proj <- 0
+LandDemand_Projected <- LandDemand_Projected %>% #aggregate any duplicate rainfed or irrigated values so each crop-country value is not duplicated. 
+  group_by(Item, CountryName) %>%
+  summarise_each(funs(sum))
+#LandDemand Projected = Harvested Area (2050,Irrigated) + Harvested Area (2050, Rainfed)
+LandDemand_Projected$proj <- LandDemand_Projected$Irrigated + LandDemand_Projected$Rainfed  #total projected land demand
+```
+
+```{r pressure, echo=FALSE}
+# Calculate Baseline land demand (= 2050 prod/2012 yield)
+LandDemand_2012 <- dplyr::filter(LandDemand, Year == 2012)
+LandDemand_2012$Element <- ifelse(is.na(LandDemand_2012$Prod_R) == TRUE, "Irrigated", "Rainfed")
+LandDemand_2012 <- spread(LandDemand_2012, Element, `Crop yield`)
+LandDemand_2012[is.na(LandDemand_2012)] <- 0
+LandDemand_2012$Year <- NULL 
+LandDemand_Baseline <- LandDemand_2012[,c(1,2,8,9)]
+colnames(LandDemand_Baseline) <- c("Item","CountryName",  "Yld_I" , "Yld_R" )
+
+
+LandDemand_Baseline <- merge(LandDemand_Baseline, LandDemand_2050[,c(1,2,6,7)]) #combines 2050 production irrgated and production rainfed with Baseline yields (2012 yields) data
+LandDemand_Baseline <-LandDemand_Baseline  %>% #aggregate any duplicate rainfed or irrigated values so each crop-country value is not duplicated. 
+  group_by(Item, CountryName) %>%
+  summarise_each(funs(sum))
+LandDemand_Baseline$Harv_R <-  LandDemand_Baseline$Prod_R/LandDemand_Baseline$Yld_R 
+LandDemand_Baseline$Harv_I <-  LandDemand_Baseline$Prod_I/LandDemand_Baseline$Yld_I 
+LandDemand_Baseline[is.na(LandDemand_Baseline)] <- 0
+LandDemand_Baseline$Baseline <- LandDemand_Baseline$Harv_R + LandDemand_Baseline$Harv_I #total baseline land demand  
+```
+
+```{r pressure, echo=FALSE}
+# Calculate High Land demand = 2012 harvested area (High Yield = 2050 production/2012 harvested area)
+colnames(LandDemand_2012) <- c("Item", "CountryName", "Arable land" , "Cropping intensity" ,"Harvested Area",  "Prod_I","Prod_R", "Yld_I", "Yld_R" )
+LandDemand_2012$Element <- ifelse(LandDemand_2012$Prod_R == 0, "Irrigated", "Rainfed")
+LandDemand_2012 <- spread(LandDemand_2012, Element, `Harvested Area`)
+colnames(LandDemand_2012) <- c("Item", "CountryName",  "Arable land" , "Cropping intensity",  "Prod_I","Prod_R", "Yld_I", "Yld_R", "Harv_I", "Harv_R" )
+LandDemand_2012[is.na(LandDemand_2012)] <- 0
+LandDemand_High <- LandDemand_2012
+LandDemand_High <-LandDemand_High  %>% #aggregate any duplicate rainfed or irrigated values so each crop-country value is not duplicated. 
+  group_by(Item, CountryName) %>%
+  summarise_each(funs(sum))
+LandDemand_High$High <- LandDemand_High$Harv_I + LandDemand_High$Harv_R #total land demand for high scenario
+
+#Ignore Cropping intensity, arable land, yield, and the production values in Land Demand High dataset since those reflect 2012, will calculate High scenario yield later
+
+```
+
+```{r pressure, echo=FALSE}
+# Calculate LUC by crop and country for baseline scenario (baseline land demand/crop intensity(I,R) - 2012 arable land(I,R)). Dividing land demand by cropping intensity converts land demand (essentially harvested area) to arable land for that scenario. The "I" and "R" labels stand for irrigated land and rainfed land. Both irrigated and rainfed systems have different cropping intensities and therefore different amounts of harvested area and arable land
+
+#need to spread cropping intensity first ; 2012 cropping intensity is assumed for baseline yield scenario
+LandDemand_2012$Element <- ifelse(LandDemand_2012$Prod_R == 0, "Irrigated", "Rainfed")
+LandDemand_2012 <- spread(LandDemand_2012,Element, `Cropping intensity`)
+colnames(LandDemand_2012) <- c("Item", "CountryName", "Arable land" ,  "Prod_I","Prod_R", "Yld_I", "Yld_R", "Harv_I", "Harv_R", "CropIntensity_I", "CropIntensity_R")
+LandDemand_2012[is.na(LandDemand_2012)] <- 0
+
+#Need to spread arable land 
+LandDemand_2012$Element <- ifelse(LandDemand_2012$Prod_R == 0, "Irrigated", "Rainfed")
+LandDemand_2012 <- spread(LandDemand_2012,Element, `Arable land`)
+colnames(LandDemand_2012) <- c("Item", "CountryName",  "Prod_I","Prod_R", "Yld_I", "Yld_R", "Harv_I", "Harv_R", "CropIntensity_I", "CropIntensity_R", "Arable_I", "Arable_R") 
+LandDemand_2012[is.na(LandDemand_2012)] <- 0
+LandDemand_2012 <-LandDemand_2012  %>% #aggregate any duplicate rainfed or irrigated values so each crop-country value is not duplicated. 
+  group_by(Item, CountryName) %>%
+  summarise_each(funs(sum))
+
+#Merge relevant data and calc LUC for baseline
+LUC_baseline <- merge(LandDemand_Baseline[, c(1,2,7,8),],LandDemand_2012[,c(1,2,9:12)])
+colnames(LUC_baseline) <- c("Item","CountryName","Base_R", "Base_I", "CropIntensity_I","CropIntensity_R", "Arable_I","Arable_R")
+#Convert land demand to arable land with cropping intensity,cannot use original arable land from FOFA data 
+LUC_baseline$LUC <- ifelse(LUC_baseline$Base_R == 0,(LUC_baseline$Base_I/LUC_baseline$CropIntensity_I) - LUC_baseline$Arable_I ,ifelse(LUC_baseline$Base_I == 0, (LUC_baseline$Base_R/LUC_baseline$CropIntensity_R) -  LUC_baseline$Arable_R, ((LUC_baseline$Base_R/LUC_baseline$CropIntensity_R) + (LUC_baseline$Base_I/LUC_baseline$CropIntensity_I)) - (LUC_baseline$Arable_I + LUC_baseline$Arable_R)))
+ 
+```
+
+```{r pressure, echo=FALSE}
+# Calculate LUC by crop and country for projected = land demand/crop intensity(I,R) - 2012 arable land(I,R) ; assume 2050 cropping intensity; projected land demand = harvested area for 2050
+
+colnames(LandDemand_2050) <- c("Item", "CountryName","Arable land", "Crop yield",  "Cropping intensity", "Prod_I",  "Prod_R", "Harv_I", "Harv_R") 
+
+#spread cropping intensity
+LandDemand_2050$Element <- ifelse(LandDemand_2050$Prod_R == 0, "Irrigated", "Rainfed")
+LandDemand_2050 <- spread(LandDemand_2050,Element, `Cropping intensity`)
+colnames(LandDemand_2050) <- c("Item", "CountryName","Arable land", "Crop yield",  "Prod_I",  "Prod_R", "Harv_I", "Harv_R", "CropIntensity_I","CropIntensity_R") 
+LandDemand_2050[is.na(LandDemand_2050)] <- 0
+LandDemand_2050 <- LandDemand_2050  %>% #aggregate any duplicate rainfed or irrigated values so each crop-country value is not duplicated for arable land. 
+  group_by(Item, CountryName) %>%
+  summarise_each(funs(sum))
+
+#Calc LUC for projected scenario.Projected land demand = harvested area for 2050, need 2012 arable land, 2050 cropping intensity.
+LUC_projected  <- merge(LandDemand_2050[, c(1,2, 5:10)],LandDemand_2012[,c(1,2,11,12)]) #Combine "Item", "Countryname", 2050 production (rainfed and irrigated), 2050 crop intensity (irrigatd and rainfed), 2012 Arable land (irrigated and rainfed)
+colnames(LUC_projected) <- c("Item", "CountryName", "Prod_I", "Prod_R", "Harv_I", "Harv_R", "CropIntensity_I","CropIntensity_R", "Arable12_I", "Arable12_R" )
+#Convert land demand to arable land with cropping intensity and calculate LUC
+LUC_projected$LUC <- ifelse(LUC_projected$Harv_R == 0,(LUC_projected$Harv_I/LUC_projected$CropIntensity_I) - LUC_projected$Arable12_I ,ifelse(LUC_projected$Harv_I == 0, (LUC_projected$Harv_R/LUC_projected$CropIntensity_R) -  LUC_projected$Arable12_R, ((LUC_projected$Harv_R/LUC_projected$CropIntensity_R) + (LUC_projected$Harv_I/LUC_projected$CropIntensity_I)) - (LUC_projected$Arable12_I + LUC_projected$Arable12_R)))
+
+```
+
+
+```{r pressure, echo=FALSE}
+# Calculate LUC by crop and country for high  =  land demand/crop intensity(I,R) - 2012 arable land(I,R) ; assume 2050 cropping intensity; high land demand = harvested area for 2012. Need to calculate new cropping intensity. Yields are higher than FOFA 2050 yield so cropping intensity must be higher. 
+
+High_Yld_CI <- cbind(LandDemand_2050[, c(1,2,5:10)], LandDemand_2012[,c(1,2,7,8)])
+High_Yld_CI$Item1 <- NULL
+High_Yld_CI$CountryName1 <- NULL 
+colnames(High_Yld_CI) <- c("Item", "CountryName" , "Prod_I" ,"Prod_R" , "Harv_I", "Harv_R",        "CropIntensity_I", "CropIntensity_R", "Harv12_I" , "Harv12_R")
+
+#Calc new yield for High-yield scenario
+High_Yld_CI$Yld_I <- High_Yld_CI$Prod_I/High_Yld_CI$Harv12_I
+High_Yld_CI$Yld_R <- High_Yld_CI$Prod_R/High_Yld_CI$Harv12_R
+
+#Calc 2050 FOFA yield
+High_Yld_CI$FOFAyld_I <- High_Yld_CI$Prod_I/High_Yld_CI$Harv_I
+High_Yld_CI$FOFAyld_R <- High_Yld_CI$Prod_R/High_Yld_CI$Harv_R
+
+#replace Nan with 0
+High_Yld_CI[is.na(High_Yld_CI)] <- 0
+
+#Calc new crop intensity for high-yld scenario. New crop intensity = (high yield * FOFA crop intensity)/FOFA yield
+High_Yld_CI$new_CI_R <- (High_Yld_CI$Yld_R * High_Yld_CI$CropIntensity_R)/High_Yld_CI$FOFAyld_R 
+High_Yld_CI$new_CI_I <- (High_Yld_CI$Yld_I * High_Yld_CI$CropIntensity_I)/High_Yld_CI$FOFAyld_I 
+
+
+#Calc LUC change
+LUC_high  <- cbind(LandDemand_High[,c(1,2,9,10)],High_Yld_CI[, c(1,2,15,16)], LandDemand_2012[,c(1,2,11,12)])
+LUC_high$Item1 <- NULL
+LUC_high$Item2<- NULL
+LUC_high$CountryName1<- NULL
+LUC_high$CountryName2<- NULL
+
+High_Yld_CI[is.na(High_Yld_CI)] <- 0
+LUC_high[is.na(LUC_high)] <- 0
+
+#Convert land demand to arable land with cropping intensity,cannot use original arable land from FOFA data 
+LUC_high$LUC <- ifelse(LUC_high$Harv_R == 0,(LUC_high$Harv_I/LUC_high$new_CI_I) - LUC_high$Arable_I ,ifelse(LUC_high$Harv_I == 0, (LUC_high$Harv_R/LUC_high$new_CI_R) -  LUC_high$Arable_R, ((LUC_high$Harv_R/LUC_high$new_CI_R) + (LUC_high$Harv_I/LUC_high$new_CI_I)) - (LUC_high$Arable_I + LUC_high$Arable_R)))
+```
+
+```{r pressure, echo=FALSE}
+#Save files
+
+write.csv(LUC_high,"~/Desktop/LandDemand/LUC_high.csv")
+write.csv(LUC_baseline,"~/Desktop/LandDemand/LUC_baseline.csv")
+write.csv(LUC_projected,"~/Desktop/LandDemand/LUC_projected.csv")
+
+```
+
+```{r pressure, echo=FALSE}
+#Import World CO2 Loss file: includes CO2 emitted (veg CO2 loss and soil CO2 loss) from each ha of LUC of a particular crop. Subset African countries and fill in missing data values. Data filling especially needs QC.
+
+
+read.csv("~/Desktop/QGIS_MAPSPAM_analysis/World_CO2_loss.csv") #This table include LUC emissions (CO2 equiv)/ha using Searchinger's (25%) and Houghton's (40%) estimates of soil carbon loss for cropland conversion for each crop by country
+
+CO2_loss <- World_CO2_loss[, c(2, 37:70)] #only include cols on carbon emissions/ha (in terms of veg and soil, not totals) using Houhgton's estimates. Using Houghton's estimates means that there is a higher carbon cost to cropland conversion. The higher carbon cost means that more CO2 will be emitted due to LUC. As yields rise, there will be land sparing, which means that that carbon benefit will be higher as a greater amount of soil carbon could be restored (40% in comparision to 25%). This means that there is a wider range in LUC emissions with Houghton's estimates. 
+
+Africa <- c( "Algeria","Angola", "Benin", "Botswana", "Burkina Faso", "Burundi","Cape Verde", "Cameroon", "Chad", "Central African Republic", "Côte d'Ivoire","Comoros", "Djibouti", "Democratic Republic of the Congo", "Equatorial Guinea","Egypt", "Ethiopia", "Eswatini" , "Eritrea, Gabon", "Gambia", "Ghana", "Guinea" , "Guinea-Bissau", "Kenya" ,"Lesotho" , "Liberia", "Librya","Madagascar" , "Malawi" , "Mali", "Mauritania" , "Mauritius",  "Mozambique",  "Namibia" , "Niger", "Nigeria",  "Rwanda"  ,"Sao Tome and Principe" , "Senegal", "Seychelles" , "Sierra Leone", "Somalia", "South Africa", "Sudan" ,"Sudan (former)", "Togo" , "Uganda",  "United Republic of Tanzania", "Tanzania", "Zambia" , "Zimbabwe", "Tunisia", "Morocco")
+#List of countries is from World Bank and FAO (Tanzania in FOFA is "United Republic of Tanzania" unlike in FAOSTAT )  TO DO : omit Comoros, Eritrea, Guinea Bissau, Seychelles
+
+CO2_loss_Africa <- filter(CO2_loss, CO2_loss$Country %in% Africa)
+
+#DATA FILL. 2 steps.
+
+#1. Replaces 0's with NAs. Fill missing values with avg CO2 loss across all countries for the given crop (essentially fill missing vaues with average of non-zero CO2 loss values across all countries for given crop's (veg or soil) column of CO2 emissions. 
+CO2_loss_Africa[CO2_loss_Africa == 0] <- NA #only applies for cols 3,4, the banana cols
+CO2_loss_Africa[CO2_loss_Africa == "0.000000e+00"] <- NA #due to the type
+for (i in 2:ncol(CO2_loss_Africa)) {
+  for (j in 1: nrow(CO2_loss_Africa)) {
+     ifelse(is.na(CO2_loss_Africa[j,i]), CO2_loss_Africa[j,i] <- mean(as.numeric(unlist(CO2_loss_Africa[,i])),na.rm = TRUE), CO2_loss_Africa[j,i])
+  }
+}
+
+#Replace banana CO2 loss with average of all other crops' CO2 losses for soil and veg since banana has missing alues across all countries.
+
+cols_soil <- grep("*_soil_H", colnames(CO2_loss_Africa)) #store cols for soil
+cols_soil <- cols_soil[-1] #take out banana col
+cols_veg <- grep("*_veg_H", colnames(CO2_loss_Africa)) #store cols for veg
+cols_veg <- cols_veg[-1] #take out banana col
+
+CO2_loss_Africa_s <- CO2_loss_Africa[, cols_soil] #subset out cols with soil carbon loss values
+CO2_loss_Africa_s$banps_soil <- rowMeans(CO2_loss_Africa_s) #banana carbon loss value equals the avg carbon loss values of all of the other crops
+
+CO2_loss_Africa_v <- CO2_loss_Africa[, cols_veg] #subset out cols with veg carbon loss values
+CO2_loss_Africa_v$banps_vegsu <- rowMeans(CO2_loss_Africa_v) #banana carbon loss value equals the avg carbon loss values of all of the other crops
+
+#Store new banana values into original dataset
+CO2_loss_Africa$banps_soil_H <- CO2_loss_Africa_s$banps_soil 
+CO2_loss_Africa$banps_veg_H<-CO2_loss_Africa_v$banps_vegsu
+
+#Add together soil and veg CO2 losses for each crop by country
+CO2_Afr_crop <- as.data.frame(matrix(0, nrow = nrow(CO2_loss_Africa), ncol = 1)) #ncol equal number of crops, nrow equals number of countries
+CO2_Afr_crop$banps <- CO2_loss_Africa$banps_soil_H + CO2_loss_Africa$banps_veg_H
+CO2_Afr_crop$maiz <- CO2_loss_Africa$maiz_soil_H + CO2_loss_Africa$maiz_veg_H
+CO2_Afr_crop$barls <- CO2_loss_Africa$barls_soil_H + CO2_loss_Africa$barls_veg_H
+CO2_Afr_crop$cass <- CO2_loss_Africa$cass_soil_H+ CO2_loss_Africa$cass_veg_H
+CO2_Afr_crop$mill <- CO2_loss_Africa$mill_soil_H + CO2_loss_Africa$mill_veg_H
+CO2_Afr_crop$grou <- CO2_loss_Africa$grou_soil_H + CO2_loss_Africa$grou_veg_H
+CO2_Afr_crop$ooil <- CO2_loss_Africa$ooil_soil_H + CO2_loss_Africa$ooil_veg_H
+CO2_Afr_crop$opul <- CO2_loss_Africa$opul_soil_H + CO2_loss_Africa$opul_veg_H
+CO2_Afr_crop$pota <- CO2_loss_Africa$pota_soil_H + CO2_loss_Africa$pota_veg_H
+CO2_Afr_crop$rice <- CO2_loss_Africa$rice_soil_H+ CO2_loss_Africa$rice_veg_H
+CO2_Afr_crop$sorg <- CO2_loss_Africa$sorg_soil_H + CO2_loss_Africa$sorg_veg_H
+CO2_Afr_crop$soyb <- CO2_loss_Africa$soyb_soil_H + CO2_loss_Africa$soyb_veg_H
+CO2_Afr_crop$sugb <- CO2_loss_Africa$sugb_soil_H + CO2_loss_Africa$sugb_veg_H
+CO2_Afr_crop$sugc <- CO2_loss_Africa$sugc_soil_H + CO2_loss_Africa$sugc_veg_H
+CO2_Afr_crop$swpy <- CO2_loss_Africa$swpy_soil_H + CO2_loss_Africa$swpy_veg_H
+CO2_Afr_crop$whea <-CO2_loss_Africa$whea_soil_H + CO2_loss_Africa$whea_veg_H
+CO2_Afr_crop$V1 <- CO2_loss_Africa$Country
+colnames(CO2_Afr_crop)[1] <- "Country"
+
+
+
+
+```
+
+ 
+
+```{r pressure, echo=FALSE}
+#Have LUC emissions results based on option 1 and 3 (upper and lower bounds)
+#Multiply LUC by CO2 emissions/ha 
+
+# 3 options for addressing negative values. 
+
+#1. Leave them in. Does not reflect shifting cropland. Negative LUC means that farmland is abandoned and becomes native vegetation. #Explain challenges/assumptions (soil carbon)
+Base_LUC <- LUC_baseline[, c(1,2,9)] #selects crop, country, and LUC cols
+Proj_LUC <- LUC_projected[, c(1,2,11)] #selects crop, country, and LUC cols
+High_LUC <- LUC_high[, c(1,2,9)] #selects crop, country, and LUC cols
+ 
+#Merge country, crop, and LUC cols across all 2 scenarios. Crop and country cols will be the same across all 3 scenarios.
+LUC <- full_join(Base_LUC, Proj_LUC, by = c("Item", "CountryName"))
+LUC <- full_join(LUC, High_LUC, by = c("Item", "CountryName"))
+colnames(LUC) <- c("Crop","Country", "Base", "Proj", "High")
+LUC <- filter(LUC, LUC$Country %in% Africa) #Only include African countries
+
+#Convert FOFA crop names to MAPSPAM style crop names
+LUC[LUC=="Growing of bananas"] <- "banps"
+LUC[LUC =="Growing of barley"] <- "barls"
+LUC[LUC =="Growing of cassava"] <- "cass"
+LUC[LUC =="Growing of groundnuts"] <- "grou"
+LUC[LUC=="Growing of grain maize"] <- "maiz"
+LUC[LUC=="Growing of millet"] <- "mill"
+LUC[LUC=="Growing of other oilseeds"] <- "ooil"
+LUC[LUC =="Growing of paddy rice"] <- "rice"
+LUC[LUC =="Growing of dried pulses"] <- "opul"
+LUC[LUC =="Growing of potatoes"] <- "pota"
+LUC[LUC=="Growing of sorghum"] <- "sorg"
+LUC[LUC =="Growing of sugar beet"] <- "sugb"
+LUC[LUC=="Growing of sugar cane"] <- "sugc"
+LUC[LUC=="Growing of wheat"] <- "whea"
+LUC[LUC=="Growing of sweet potato and yams"] <- "swpy"
+LUC[LUC=="Growing of soybeans"] <- "soyb"
+
+
+#Multiply by CO2/ha by LUC (doesn't change negative values)
+CO2_Afr_crop2 <- melt(CO2_Afr_crop) #will allow for joining data
+colnames(CO2_Afr_crop2) <- c("Country", "Crop", "CO2/ha")
+LUC_CO2 <- right_join(LUC, CO2_Afr_crop2, by = c("Country", "Crop")) #should eliminate crops in LUC dataset that do not have corresponding crop match in the CO2_Afr_crop2 dataset (derived from MAPSPAM analysis). 
+LUC_CO2$Base_CO2 <- LUC_CO2$Base * LUC_CO2$`CO2/ha`
+LUC_CO2$Proj_CO2 <- LUC_CO2$Proj * LUC_CO2$`CO2/ha`
+LUC_CO2$High_CO2 <- LUC_CO2$High * LUC_CO2$`CO2/ha`
+
+#Aggregate CO2 emissions by country (add up all crops)
+LUC_CO2[is.na(LUC_CO2)] <- 0 #turn NAs into 0 to allow summarize function
+LUC_CO2_country <- LUC_CO2 %>% dplyr::group_by(Country) %>% summarize(sum(Base_CO2))
+
+LUC_CO2_country <- right_join(LUC_CO2_country, LUC_CO2 %>% dplyr::group_by(Country) %>% summarize(sum(Proj_CO2)))
+
+LUC_CO2_country <- right_join(LUC_CO2_country, LUC_CO2 %>% dplyr::group_by(Country) %>% summarize(sum(High_CO2)))
+
+write.csv(LUC_CO2_country,"~/Desktop/LandDemand/CO2_Afr_1.csv") 
+
+LUC_CO2_E_Afr <- filter(LUC_CO2_country, LUC_CO2_country$Country %in% E_Afr)
+LUC_CO2_W_Afr <- filter(LUC_CO2_country, LUC_CO2_country$Country %in% W_Afr)
+LUC_CO2_C_Afr <- filter(LUC_CO2_country, LUC_CO2_country$Country %in% C_Afr)
+LUC_CO2_S_Afr <- filter(LUC_CO2_country, LUC_CO2_country$Country %in% S_Afr)
+LUC_CO2_N_Afr <- filter(LUC_CO2_country, LUC_CO2_country$Country %in% N_Afr)
+LUC_CO2_SSA <- filter(LUC_CO2_country, LUC_CO2_country$Country %in% SSA)
+```
+
+```{r pressure, echo=FALSE}
+#[DO NOT USE THIS OPTION, SKIP to Option 3, DO NOT RUN THIS SECTION]
+#2.Address shifting cropland. 50% of arable land increase expands into abandoned farmland and 50% expands into native vegetation. 
+
+#add up all negative LUC values, represents abandoned farmland
+#high_abandon_crop <-  LUC_high %>% dplyr::group_by(Item) %>% summarize(sum(LUC[LUC<0]))
+  
+#high_abandon_country <-  LUC_high %>% dplyr::group_by(CountryName) %>% summarize(sum(LUC[LUC<0]))
+
+#proj_abandon_crop <-  LUC_projected %>% dplyr::group_by(Item) %>% summarize(sum(LUC[LUC<0]))
+  
+#proj_abandon_country <-  LUC_projected %>% dplyr::group_by(CountryName) %>% summarize(sum(LUC[LUC<0]))
+
+#base_abandon_crop <-  LUC_baseline %>% dplyr::group_by(Item) %>% summarize(sum(LUC[LUC<0]))
+  
+#base_abandon_country <-  LUC_baseline %>% dplyr::group_by(CountryName) %>% summarize(sum(LUC[LUC<0])) 
+
+#Add up all positive LUC values, Represents cropland expansion.
+#high_exp_crop <-  LUC_high %>% dplyr::group_by(Item) %>% summarize(sum(LUC[LUC>0]))
+  
+#high_exp_country <-  LUC_high %>% dplyr::group_by(CountryName) %>% summarize(sum(LUC[LUC>0]))
+
+#proj_exp_crop <-  LUC_projected %>% dplyr::group_by(Item) %>% summarize(sum(LUC[LUC>0]))
+  
+#proj_exp_country <-  LUC_projected %>% dplyr::group_by(CountryName) %>% summarize(sum(LUC[LUC>0]))
+
+#base_exp_crop <-  LUC_baseline %>% dplyr::group_by(Item) %>% summarize(sum(LUC[LUC>0]))
+  
+#base_exp_country <-  LUC_baseline %>% dplyr::group_by(CountryName) %>% summarize(sum(LUC[LUC>0]))
+
+#Half of all postive LUC values are added to negative LUC values since half of cropland shifts into abandoned farmland and the other shifts into native vegetation.
+#tot_high_LUC_crop2 <- merge(high_exp_crop, high_abandon_crop)
+#colnames(tot_high_LUC_crop2) <- c("crops","high_exp_crop", "high_abandon_crop")
+#tot_high_LUC_crop2$shift <- (0.5 * tot_high_LUC_crop2$high_exp_crop) + tot_high_LUC_crop2$high_abandon_crop
+
+#tot_proj_LUC_crop2 <- merge(proj_exp_crop, proj_abandon_crop)
+#colnames(tot_proj_LUC_crop2) <- c("crops","proj_exp_crop", "proj_abandon_crop")
+#tot_proj_LUC_crop2$shift <- (0.5 * tot_proj_LUC_crop2$proj_exp_crop) + tot_proj_LUC_crop2$proj_abandon_crop
+
+#tot_base_LUC_crop2 <- merge(base_exp_crop, base_abandon_crop)
+#colnames(tot_base_LUC_crop2) <- c("crops","base_exp_crop", "base_abandon_crop")
+#tot_base_LUC_crop2$shift <- (0.5 * tot_base_LUC_crop2$base_exp_crop) + tot_base_LUC_crop2$base_abandon_crop
+
+#tot_high_LUC_crop2$LUC <- (0.5 * tot_high_LUC_crop2$high_exp_crop) + tot_high_LUC_crop2$shift
+#tot_proj_LUC_crop2$LUC <- (0.5 * tot_proj_LUC_crop2$proj_exp_crop) + tot_proj_LUC_crop2$shift
+#tot_base_LUC_crop2$LUC <- (0.5 * tot_base_LUC_crop2$base_exp_crop) + tot_base_LUC_crop2$shift
+```
+
+```{r pressure, echo=FALSE}
+#Option 3
+#Make all negative LUC values 0. Assumed that arable land expansion does not go into abandoned farmland and that there is no change in vegetation or below-ground carbon.
+
+#Convert all negative values across all scenarios to 0
+LUC[,-c(1,2)][LUC[, -c(1,2)] < 0] <- 0 # "-c(1,2) excludes the crop and country values, so no values are changed to 0 there
+
+LUC_CO2_0 <- right_join(LUC, CO2_Afr_crop2, by = c("Country", "Crop"))
+
+LUC_CO2_0$Base_CO2 <- LUC_CO2_0$Base * LUC_CO2_0$`CO2/ha`
+LUC_CO2_0$Proj_CO2 <- LUC_CO2_0$Proj * LUC_CO2_0$`CO2/ha`
+LUC_CO2_0$High_CO2 <- LUC_CO2_0$High * LUC_CO2_0$`CO2/ha`
+
+#Aggregate emissions for scenario by country and region [Something goes wrong here in the right_join]
+LUC_CO2_0_country <- LUC_CO2_0 %>% dplyr::group_by(Country) %>% summarize(sum(Base_CO2))
+
+LUC_CO2_0_country <- right_join(LUC_CO2_0_country, LUC_CO2_0 %>% dplyr::group_by(Country) %>% summarize(sum(Proj_CO2)))
+
+LUC_CO2_0_country <- right_join(LUC_CO2_0_country, LUC_CO2_0 %>% dplyr::group_by(Country) %>% summarize(sum(High_CO2)))
+
+write.csv(LUC_CO2_0_country,"~/Desktop/LandDemand/CO2_Afr_3.csv")
+
+```
+
+```{r pressure, echo=FALSE}
+#Create a dataset with option 1 and 3 data (represent upper and lower limits of LUC emissions). Option 3 (convert -LUC to 0 is the upper bound)
+colnames(LUC_CO2_0_country) <- c("Country", "Base_upr", "Proj_upr", "High_upr")
+colnames(LUC_CO2_country) <- c("Country", "Base_lwr", "Proj_lwr", "High_lwr")
+LUC_country_bounds <- right_join(LUC_CO2_0_country, LUC_CO2_country)
+
+
+#Subset by regions
+#Member countries within each region are from the UN Statistics division : https://unstats.un.org/unsd/methodology/m49/overview/
+
+W_Afr <- c("Benin","Burkina Faso","Côte d'Ivoire", "Ghana", "Guinea", "Liberia", "Mali", "Mauritania", "Niger", "Nigeria", "Senegal" ,"Sierra Leone",   "Gambia", "Togo")
+#No Cape Verde, Guinea-Bissau, Saint Helena, Western Sahar in FOFA
+
+E_Afr <- c("Burundi", "Ethiopia", "Madagascar","Kenya" , "Malawi", "Madagascar" , "Mauritius",  "Mozambique",  "Rwanda", "Somalia", "United Republic of Tanzania", "Uganda", "Zambia", "Zimbabwe" )
+#Djibouti, South Sudan, Eritrea, Comoros, Reunion, Mayotte Seychelles not in FOFA
+C_Afr <- c("Chad", "Angola", "Central African Republic", "Gabon","Republic of the Congo", "Cameroon")
+#No Sao Tome and Principe in FOFA or Congo, no Equatorial Guinea 
+S_Afr <-c("Botswana", "Swaziland", "Lesotho", "Namibia", "South Africa") #old name for Eswatini is used, Swaziland. 
+N_Afr <-c("Algeria", "Egypt", "Libya", "Morocco", "Tunisia")
+#No Western Sahara or Sudan in FOFA
+
+SSA <-  c("Burundi", "Ethiopia", "Madagascar","Kenya" , "Malawi", "Madagascar" , "Mauritius",  "Mozambique",  "Rwanda", "Somalia", "United Republic of Tanzania", "Uganda", "Zambia", "Zimbabwe","Chad", "Angola", "Central African Republic", "Gabon","Republic of the Congo", "Cameroon", "Botswana", "Swaziland", "Lesotho", "Namibia", "South Africa", "Algeria", "Egypt", "Libya", "Morocco", "Tunisia", "Benin","Burkina Faso","Côte d'Ivoire", "Ghana", "Guinea", "Liberia", "Mali", "Mauritania", "Niger", "Nigeria", "Senegal" ,"Sierra Leone",   "Gambia", "Togo", "Rest of SSA")
+
+#Aggregate CO2 emissions by region 
+LUC_bounds_E <- filter(LUC_country_bounds , LUC_country_bounds$Country %in% E_Afr)
+LUC_bounds_W <- filter(LUC_country_bounds , LUC_country_bounds$Country %in% W_Afr)
+LUC_bounds_C<- filter(LUC_country_bounds , LUC_country_bounds$Country %in% C_Afr)
+LUC_bounds_S<- filter(LUC_country_bounds , LUC_country_bounds$Country %in% S_Afr)
+LUC_bounds_N <- filter(LUC_country_bounds , LUC_country_bounds$Country %in% N_Afr)
+LUC_bounds_SSA <- filter(LUC_country_bounds , LUC_country_bounds$Country %in% SSA)
+
+LUC_tot_region <- as.data.frame(rbind(colSums(LUC_bounds_E[, c(2:7)]), colSums(LUC_bounds_W[, c(2:7)]), colSums(LUC_bounds_C[, c(2:7)]), colSums(LUC_bounds_N[, c(2:7)]),colSums(LUC_bounds_S[, c(2:7)]), colSums(LUC_bounds_SSA[, c(2:7)])))
+LUC_tot_region$Region <- c("East", "West", "Central","Northern", "Southern", "Sub-Saharan")
+
+write.csv(LUC_tot_region,"~/Desktop/LandDemand/LUC_tot_region.csv")
+
+
+
+```
+
+```{r pressure, echo=FALSE}
+#Misc code [DO NOT RUN]
+
+FOFA_land <- LandDemand[, c(1,2,3,4)] #country, crop, year, arable land
+colnames(FOFA_land) <- c("Crop", "Country", "Year", "Arable Land")
+library(dplyr)
+librry(tidyr)
+spread(FOFA_land,key = Year)
+  as.data.frame(ifelse(FOFA_land$Year == c(2012,2050), FOFA_land, NA))
+  group_by(FOFA_land$Crop,FOFA_land$Year) %>% 
+                             dplyr::summarize(sum(FOFA_land$`Arable Land`))
+
+dplyr::group_by(Expansion)
+
+#Crops with largest expansion from 2000 to 2010 in MAPSPAM
+
+
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
