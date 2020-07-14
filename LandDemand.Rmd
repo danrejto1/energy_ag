@@ -383,15 +383,19 @@ LUC_CO2$High_CO2 <- LUC_CO2$High * LUC_CO2$`CO2/ha`
 LUC_CO2$High_alt_CO2 <- LUC_CO2$High_alt * LUC_CO2$`CO2/ha`
 
 #Aggregate CO2 emissions by country (add up all crops)
-LUC_CO2[is.na(LUC_CO2)] <- 0 #turn NAs into 0 to allow summarize function
+LUC_CO2[is.na(LUC_CO2)] <- 0 #turn NAs into 0 to allow summarize function (not needed if na.rm=T in functions)
 LUC_CO2_country <- LUC_CO2 %>% dplyr::group_by(Country) %>% summarize(sum(Base_CO2, na.rm = T))
 
-LUC_CO2_country <- right_join(LUC_CO2_country, LUC_CO2 %>% dplyr::group_by(Country) %>% summarize(sum(Proj_CO2)))
+LUC_CO2_country <- right_join(LUC_CO2_country, LUC_CO2 %>% dplyr::group_by(Country) %>% summarize(sum(Proj_CO2, na.rm = T)))
 
-LUC_CO2_country <- right_join(LUC_CO2_country, LUC_CO2 %>% dplyr::group_by(Country) %>% summarize(sum(High_CO2)))
+LUC_CO2_country <- right_join(LUC_CO2_country, LUC_CO2 %>% dplyr::group_by(Country) %>% summarize(sum(High_CO2, na.rm = T)))
+
+LUC_CO2_country <- right_join(LUC_CO2_country, LUC_CO2 %>% dplyr::group_by(Country) %>% summarize(sum(High_alt_CO2, na.rm = T)))
 
 write.csv(LUC_CO2_country,"~/Desktop/LandDemand/CO2_Afr_1.csv") 
 
+
+#Saloni - regions are not defined yet so this code doesnt run properly
 LUC_CO2_E_Afr <- filter(LUC_CO2_country, LUC_CO2_country$Country %in% E_Afr)
 LUC_CO2_W_Afr <- filter(LUC_CO2_country, LUC_CO2_country$Country %in% W_Afr)
 LUC_CO2_C_Afr <- filter(LUC_CO2_country, LUC_CO2_country$Country %in% C_Afr)
@@ -400,7 +404,7 @@ LUC_CO2_N_Afr <- filter(LUC_CO2_country, LUC_CO2_country$Country %in% N_Afr)
 LUC_CO2_SSA <- filter(LUC_CO2_country, LUC_CO2_country$Country %in% SSA)
 ```
 
-```{r pressure, echo=FALSE}
+```{r Calc LUC Option 2, echo=FALSE}
 #[DO NOT USE THIS OPTION, SKIP to Option 3, DO NOT RUN THIS SECTION]
 #2.Address shifting cropland. 50% of arable land increase expands into abandoned farmland and 50% expands into native vegetation. 
 
@@ -448,7 +452,7 @@ LUC_CO2_SSA <- filter(LUC_CO2_country, LUC_CO2_country$Country %in% SSA)
 #tot_base_LUC_crop2$LUC <- (0.5 * tot_base_LUC_crop2$base_exp_crop) + tot_base_LUC_crop2$shift
 ```
 
-```{r pressure, echo=FALSE}
+```{r Calc LUC option 3, echo=FALSE}
 #Option 3
 #Make all negative LUC values 0. Assumed that arable land expansion does not go into abandoned farmland and that there is no change in vegetation or below-ground carbon.
 
@@ -460,13 +464,16 @@ LUC_CO2_0 <- right_join(LUC, CO2_Afr_crop2, by = c("Country", "Crop"))
 LUC_CO2_0$Base_CO2 <- LUC_CO2_0$Base * LUC_CO2_0$`CO2/ha`
 LUC_CO2_0$Proj_CO2 <- LUC_CO2_0$Proj * LUC_CO2_0$`CO2/ha`
 LUC_CO2_0$High_CO2 <- LUC_CO2_0$High * LUC_CO2_0$`CO2/ha`
+LUC_CO2_0$High_alt_CO2 <- LUC_CO2_0$High_alt * LUC_CO2_0$`CO2/ha`
 
 #Aggregate emissions for scenario by country and region [Something goes wrong here in the right_join]
-LUC_CO2_0_country <- LUC_CO2_0 %>% dplyr::group_by(Country) %>% summarize(sum(Base_CO2))
+LUC_CO2_0_country <- LUC_CO2_0 %>% dplyr::group_by(Country) %>% summarize(sum(Base_CO2, na.rm = T))
 
-LUC_CO2_0_country <- right_join(LUC_CO2_0_country, LUC_CO2_0 %>% dplyr::group_by(Country) %>% summarize(sum(Proj_CO2)))
+LUC_CO2_0_country <- right_join(LUC_CO2_0_country, LUC_CO2_0 %>% dplyr::group_by(Country) %>% summarize(sum(Proj_CO2, na.rm = T)))
 
-LUC_CO2_0_country <- right_join(LUC_CO2_0_country, LUC_CO2_0 %>% dplyr::group_by(Country) %>% summarize(sum(High_CO2)))
+LUC_CO2_0_country <- right_join(LUC_CO2_0_country, LUC_CO2_0 %>% dplyr::group_by(Country) %>% summarize(sum(High_CO2, na.rm = T)))
+
+LUC_CO2_0_country <- right_join(LUC_CO2_0_country, LUC_CO2_0 %>% dplyr::group_by(Country) %>% summarize(sum(High_alt_CO2, na.rm = T)))
 
 write.csv(LUC_CO2_0_country,"~/Desktop/LandDemand/CO2_Afr_3.csv")
 
@@ -474,8 +481,8 @@ write.csv(LUC_CO2_0_country,"~/Desktop/LandDemand/CO2_Afr_3.csv")
 
 ```{r pressure, echo=FALSE}
 #Create a dataset with option 1 and 3 data (represent upper and lower limits of LUC emissions). Option 3 (convert -LUC to 0 is the upper bound)
-colnames(LUC_CO2_0_country) <- c("Country", "Base_upr", "Proj_upr", "High_upr")
-colnames(LUC_CO2_country) <- c("Country", "Base_lwr", "Proj_lwr", "High_lwr")
+colnames(LUC_CO2_0_country) <- c("Country", "Base_upr", "Proj_upr", "High_upr", "High_upr_alt")
+colnames(LUC_CO2_country) <- c("Country", "Base_lwr", "Proj_lwr", "High_lwr","High_lwr_alt")
 LUC_country_bounds <- right_join(LUC_CO2_0_country, LUC_CO2_country)
 
 
@@ -503,7 +510,7 @@ LUC_bounds_S<- filter(LUC_country_bounds , LUC_country_bounds$Country %in% S_Afr
 LUC_bounds_N <- filter(LUC_country_bounds , LUC_country_bounds$Country %in% N_Afr)
 LUC_bounds_SSA <- filter(LUC_country_bounds , LUC_country_bounds$Country %in% SSA)
 
-LUC_tot_region <- as.data.frame(rbind(colSums(LUC_bounds_E[, c(2:7)]), colSums(LUC_bounds_W[, c(2:7)]), colSums(LUC_bounds_C[, c(2:7)]), colSums(LUC_bounds_N[, c(2:7)]),colSums(LUC_bounds_S[, c(2:7)]), colSums(LUC_bounds_SSA[, c(2:7)])))
+LUC_tot_region <- as.data.frame(rbind(colSums(LUC_bounds_E[, c(2:9)]), colSums(LUC_bounds_W[, c(2:9)]), colSums(LUC_bounds_C[, c(2:9)]), colSums(LUC_bounds_N[, c(2:9)]),colSums(LUC_bounds_S[, c(2:9)]), colSums(LUC_bounds_SSA[, c(2:9)])))
 LUC_tot_region$Region <- c("East", "West", "Central","Northern", "Southern", "Sub-Saharan")
 
 write.csv(LUC_tot_region,"~/Desktop/LandDemand/LUC_tot_region.csv")
@@ -511,6 +518,20 @@ write.csv(LUC_tot_region,"~/Desktop/LandDemand/LUC_tot_region.csv")
 
 
 ```
+
+```{r Summary chart}
+library(ggplot2)
+LUC_tot_region %>% 
+  select(contains("upr"), Region) %>% 
+  filter(Region != "Sub-Saharan") %>%  #filter out since it is the sum of other regions and distorts results
+  pivot_longer(cols = -Region, names_to = "Scenario") %>% 
+  mutate(Scenario = factor(Scenario, levels=c("Base_upr", "Proj_upr", "High_upr", "High_upr_alt"))) %>%  #change x axis order
+  ggplot()+
+  geom_col(aes(x=Scenario, y=value, fill=Scenario), position = "dodge") + 
+  facet_wrap(vars(Region)) #can make range of results clearer with scales = "free_y"
+```
+
+
 
 ```{r pressure, echo=FALSE}
 #Misc code [DO NOT RUN]
